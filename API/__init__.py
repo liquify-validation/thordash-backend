@@ -14,6 +14,7 @@ from API.nodes import NodeBlueprint
 from API.historic_nodes import HistoricNodeBlueprint
 from API.histroic_global import HistoricNetworkBlueprint
 from API.nodes.task import run_every_minuite
+from API.histroic_global.task import fetch_and_store_prices, fetch_and_store_price
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -46,10 +47,12 @@ def create_flask_app(db, db_url=None):
         scheduler = BackgroundScheduler()
         scheduler.start()
         scheduler.add_job(func=run_every_minuite, trigger=IntervalTrigger(minutes=1), args=[app])
+        scheduler.add_job(func=fetch_and_store_price,  trigger="cron", hour=23, minute=59, args=[app])
 
     app.register_blueprint(NetworkBlueprint, url_prefix='/network')
     app.register_blueprint(NodeBlueprint, url_prefix='/nodes')
     app.register_blueprint(HistoricNodeBlueprint, url_prefix='/historic/node')
     app.register_blueprint(HistoricNetworkBlueprint, url_prefix='/historic/network')
+
 
     return app

@@ -1,7 +1,8 @@
 from flask_smorest import Blueprint, abort
 from flask import request, jsonify
 from sqlalchemy.exc import SQLAlchemyError
-from API.histroic_global.models import ThornodeMonitorGlobalHistoric
+from API.histroic_global.models import ThornodeMonitorGlobalHistoric, PriceData
+from datetime import datetime, timedelta
 
 
 blp = Blueprint("historic_global", __name__, description="Historic network data API")
@@ -114,3 +115,38 @@ def grabChurns():
 
     except SQLAlchemyError as e:
         return jsonify({'message': f'Database error: {str(e)}'}), 500
+
+@blp.route('/grabPrice', methods=['GET'])
+def grabChurns():
+    """
+    Returns a list of past churns which are indexed by the API
+    ---
+    tags:
+      - Historical Network
+    responses:
+        200:
+          description: List of churn heights indexed
+    """
+    """Fetches price data from the last 14 days from the database."""
+    try:
+        # Calculate the date 14 days ago
+        today = datetime.now().date()
+        start_date = today - timedelta(days=28)
+
+        # Query the database for records within the last 14 days
+        prices = PriceData.query.filter(PriceData.date >= start_date).order_by(PriceData.date).all()
+
+        # Convert the results to a list of dictionaries
+        price_list = [price.to_dict() for price in prices]
+
+        # Return the data as a JSON response
+        return jsonify({
+            "status": "success",
+            "data": price_list
+        }), 200
+    except Exception as e:
+        # Handle errors and return a 500 response
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500

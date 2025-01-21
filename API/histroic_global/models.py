@@ -21,3 +21,17 @@ class ThornodeMonitorGlobalHistoric(db.Model):
             'thorPrice': self.thorPrice,
             'date': self.date
         }
+
+class PriceData(db.Model):
+    __tablename__ = 'price_data'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    date = db.Column(db.Date, nullable=False, unique=True)
+    price = db.Column(db.Float, nullable=False)
+    def __repr__(self):
+        return f"<PriceData(id={self.id}, date={self.date}, price={self.price})>"
+
+    def to_dict(self):
+        return {
+            "date": self.date.isoformat(),  # Converts the date to ISO format string
+            "price": self.price
+        }
