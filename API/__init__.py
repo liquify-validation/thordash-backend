@@ -46,7 +46,7 @@ def create_flask_app(db, db_url=None):
     with app.app_context():
         scheduler = BackgroundScheduler()
         scheduler.start()
-        scheduler.add_job(func=run_every_minuite, trigger=IntervalTrigger(minutes=1), args=[app])
+        # scheduler.add_job(func=run_every_minuite, trigger=IntervalTrigger(minutes=1), args=[app])
         scheduler.add_job(func=fetch_and_store_price,  trigger="cron", hour=23, minute=59, args=[app])
 
     app.register_blueprint(NetworkBlueprint, url_prefix='/network')

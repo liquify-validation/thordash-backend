@@ -117,9 +117,9 @@ def grabChurns():
         return jsonify({'message': f'Database error: {str(e)}'}), 500
 
 @blp.route('/grabPrice', methods=['GET'])
-def grabChurns():
+def grabPrice():
     """
-    Returns a list of past churns which are indexed by the API
+    Returns a list of price data which are indexed by the API
     ---
     tags:
       - Historical Network
