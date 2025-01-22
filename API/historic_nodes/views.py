@@ -18,7 +18,7 @@ from config import config
 blp = Blueprint("historic_node", __name__, description="Historic node data API")
 
 
-@blp.route('/generateReport', methods=['GET'])
+@blp.route('/generateReport', methods=['POST'])
 def generateReport():
     """
     Generate a report for a node's performance between specified cycles
