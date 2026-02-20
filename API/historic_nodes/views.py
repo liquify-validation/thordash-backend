@@ -11,7 +11,6 @@ from sqlalchemy import and_, func
 from Common.common import convert_date_format
 import time
 from API.histroic_global.models import ThornodeMonitorGlobalHistoric
-from API.histroic_global.views import grabChurns
 
 from config import config
 
@@ -238,7 +237,7 @@ def grabSlashes(node=None):
         return jsonify({'message': f'Database error: {str(e)}'}), 500
 
 @blp.route('/grab-rewards/<node>', methods=['GET'])
-def grabSlashes(node=None):
+def grabRewards(node=None):
     """
     Grab a node's rewards over past churns
     API used to inspect the bond amount of a node over time.
@@ -422,27 +421,41 @@ def grabHistoricPerformers(churn):
                description: Churn height not indexed
            """
 
-    all_churns = grabChurns().json  # Replace with your actual call
-    if not isinstance(all_churns, list) or len(all_churns) == 0:
-        abort(404, 'No churns data available')
-
-    # Get the last 'churns' items
     try:
-        last_churns = all_churns[-int(churn):]
+        churn_count = int(churn)
     except ValueError:
         abort(400, 'Invalid churn parameter')
 
+    # Query DB directly instead of calling the view function (avoids Response parsing issues)
+    churns_query = (ThornodeMonitorGlobalHistoric.query
+                    .with_entities(ThornodeMonitorGlobalHistoric.churnHeight)
+                    .distinct()
+                    .order_by(ThornodeMonitorGlobalHistoric.churnHeight.asc())
+                    .all())
+    all_churns = [item.churnHeight for item in churns_query]
+
+    if not all_churns:
+        abort(404, 'No churns data available')
+
+    last_churns = all_churns[-churn_count:]
+
+    # Single batch query instead of one query per churn (eliminates N+1)
+    all_entries = (ThornodeMonitorHistoric.query
+                   .filter(ThornodeMonitorHistoric.churnHeight.in_(last_churns))
+                   .all())
+
     outputData = {}
+    for entry in all_entries:
+        d = entry.to_dict()
+        churn_h = entry.churnHeight
+        if churn_h not in outputData:
+            outputData[churn_h] = {}
+        if d['status'] == 'Active':
+            outputData[churn_h][d['node_address']] = d
 
-    for churn_data in last_churns:
-        entries = ThornodeMonitorHistoric.query.filter_by(churnHeight=churn_data).all()
-
-        if not entries:
-            abort(404, f'Churn height {churn_data} not indexed')
-
-        data = [entry.to_dict() for entry in entries]
-        active_nodes = {d['node_address']: d for d in data if d['status'] == "Active"}
-        outputData[churn_data] = active_nodes
+    for churn_h in last_churns:
+        if churn_h not in outputData:
+            abort(404, f'Churn height {churn_h} not indexed')
 
     ByChurnData = {
         churn: {
