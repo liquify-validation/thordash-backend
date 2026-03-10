@@ -52,6 +52,8 @@ def create_flask_app(db, db_url=None):
     api = Api(app)
 
     with app.app_context():
+        db.create_all()
+
         scheduler = BackgroundScheduler()
         scheduler.start()
         # scheduler.add_job(func=run_every_minuite, trigger=IntervalTrigger(minutes=1), args=[app])
