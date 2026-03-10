@@ -269,8 +269,9 @@ def generateBPReport():
             bp_bond = int(provider['bond'])
             total_bond = churn.bond
             bp_ratio = bp_bond / total_bond if total_bond > 0 else 0
+            node_operator_fee = int(bp_data.get('node_operator_fee', 0)) / 10000
             node_reward = churn.current_award
-            bp_reward = node_reward * bp_ratio
+            bp_reward = node_reward * bp_ratio * (1 - node_operator_fee)
 
             totalBPReward += bp_reward
             totalNodeReward += node_reward
