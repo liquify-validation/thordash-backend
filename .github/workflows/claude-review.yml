@@ -1,10 +1,8 @@
 name: Claude PR Review
 
 on:
-  # Trigger when someone comments on a PR
   issue_comment:
     types: [created]
-  # Trigger when someone comments on a PR diff
   pull_request_review_comment:
     types: [created]
 
@@ -16,13 +14,18 @@ permissions:
 
 jobs:
   review:
-    # Only run when the comment contains "@claude" and is on a PR
     if: |
       contains(github.event.comment.body, '@claude') &&
       github.event.issue.pull_request
     runs-on: ubuntu-latest
     steps:
-      - uses: anthropics/claude-code-action@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
