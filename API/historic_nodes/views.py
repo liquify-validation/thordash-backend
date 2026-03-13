@@ -11,7 +11,6 @@ from sqlalchemy import and_, func
 from Common.common import convert_date_format
 import time
 from API.histroic_global.models import ThornodeMonitorGlobalHistoric
-from API.histroic_global.views import grabChurns
 
 from config import config
 
@@ -151,6 +150,180 @@ def generateReport():
     except ValueError:
         return jsonify({'message': 'Invalid input types'}), 400
 
+@blp.route('/generateBPReport', methods=['POST'])
+def generateBPReport():
+    """
+    Generate a report for a bond provider's earnings on a node between specified cycles
+    ---
+    tags:
+        - Historical Node
+
+    parameters:
+      - in: body
+        name: data
+        required: true
+        schema:
+          type: object
+          required:
+            - start
+            - end
+            - node
+            - bp
+          properties:
+            start:
+              type: string
+            end:
+              type: string
+            node:
+              type: string
+            bp:
+              type: string
+              description: Bond provider address
+    responses:
+      200:
+        description: Return bond provider earnings report for the given node.
+      400:
+        description: Invalid JSON data or missing required fields.
+    """
+    startTime = time.time()
+
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'message': 'Invalid JSON data'}), 400
+
+    try:
+        start = int(data.get('start'))
+        end = int(data.get('end'))
+        node = data.get('node')
+        bp = data.get('bp')
+
+        if not node or not start or not end or not bp:
+            return jsonify({'message': 'Invalid JSON data or missing required fields'}), 400
+
+        # Query for churns within the specified range
+        data = (ThornodeMonitorHistoric.query
+                .filter(and_(
+                    ThornodeMonitorHistoric.node_address == node,
+                    ThornodeMonitorHistoric.churnHeight >= start,
+                    ThornodeMonitorHistoric.churnHeight <= end
+                ))
+                .order_by(ThornodeMonitorHistoric.churnHeight.asc())
+                .all())
+
+        if not data:
+            return jsonify({'message': f'No data between churns {start}-{end}'}), 500
+
+        # Query for global data within the specified range
+        globalData = (ThornodeMonitorGlobalHistoric.query
+                      .filter(and_(
+                          ThornodeMonitorGlobalHistoric.churnHeight >= start,
+                          ThornodeMonitorGlobalHistoric.churnHeight <= end
+                      ))
+                      .order_by(ThornodeMonitorGlobalHistoric.churnHeight.asc())
+                      .all())
+
+        if not globalData:
+            return jsonify({'message': f'No global data between churns {start}-{end}'}), 500
+
+        totalBPReward = 0
+        totalNodeReward = 0
+
+        graphData = {
+            "Xticks": [],
+            "bpBond": [],
+            "totalBond": [],
+            "bpRatio": [],
+            "bpReward": [],
+            "nodeReward": []
+        }
+
+        tableData = {
+            "churnHeight": [],
+            "date": [],
+            "price": [],
+            "bpBond": [],
+            "totalBond": [],
+            "bpRatio": [],
+            "bpReward": [],
+            "bpRewardDollar": [],
+            "nodeReward": []
+        }
+
+        for churn, global_item in zip(data, globalData):
+            # Parse bond_providers JSON
+            bp_data = json.loads(churn.bond_providers) if churn.bond_providers else None
+            if not bp_data or 'providers' not in bp_data:
+                continue
+
+            # Find the specific bond provider
+            provider = None
+            for p in bp_data['providers']:
+                if p['bond_address'] == bp:
+                    provider = p
+                    break
+
+            if not provider:
+                continue
+
+            bp_bond = int(provider['bond'])
+            total_bond = churn.bond
+            bp_ratio = bp_bond / total_bond if total_bond > 0 else 0
+            node_operator_fee = int(bp_data.get('node_operator_fee', 0)) / 10000
+            node_reward = churn.current_award
+            bp_reward = node_reward * bp_ratio * (1 - node_operator_fee)
+
+            totalBPReward += bp_reward
+            totalNodeReward += node_reward
+
+            # Graph data
+            graphData["Xticks"].append(churn.churnHeight)
+            graphData["bpBond"].append(bp_bond)
+            graphData["totalBond"].append(total_bond)
+            graphData["bpRatio"].append(round(bp_ratio, 6))
+            graphData["bpReward"].append(bp_reward)
+            graphData["nodeReward"].append(node_reward)
+
+            # Table data
+            tableData["churnHeight"].append(churn.churnHeight)
+            tableData["date"].append(convert_date_format(global_item.date))
+            tableData["price"].append(global_item.thorPrice)
+            tableData["bpBond"].append(bp_bond / 100000000)
+            tableData["totalBond"].append(total_bond / 100000000)
+            tableData["bpRatio"].append(round(bp_ratio * 100, 2))
+            tableData["bpReward"].append(bp_reward / 100000000)
+            tableData["bpRewardDollar"].append((bp_reward / 100000000) * float(global_item.thorPrice))
+            tableData["nodeReward"].append(node_reward / 100000000)
+
+        if not graphData["Xticks"]:
+            return jsonify({'message': f'Bond provider {bp} not found on node {node} between churns {start}-{end}'}), 404
+
+        startBPBond = graphData["bpBond"][0]
+        endBPBond = graphData["bpBond"][-1]
+        avgRatio = sum(graphData["bpRatio"]) / len(graphData["bpRatio"])
+
+        endTime = time.time()
+        print(f"BP Report execution time: {endTime - startTime}s")
+
+        return jsonify({
+            'startBlock': graphData["Xticks"][0],
+            'endBlock': graphData["Xticks"][-1],
+            'startBPBond': startBPBond,
+            'endBPBond': endBPBond,
+            'bpBondChange': endBPBond - startBPBond,
+            'avgBPRatio': round(avgRatio, 6),
+            'totalBPReward': totalBPReward,
+            'totalNodeReward': totalNodeReward,
+            'churnsTracked': len(graphData["Xticks"]),
+            'graphData': graphData,
+            'tableData': tableData
+        })
+
+    except SQLAlchemyError as e:
+        return jsonify({'message': f'Database error: {str(e)}'}), 500
+    except (ValueError, KeyError) as e:
+        return jsonify({'message': f'Invalid input: {str(e)}'}), 400
+
 @blp.route('/grab-bond/<node>', methods=['GET'])
 def grabBond(node=None):
     """
@@ -238,7 +411,7 @@ def grabSlashes(node=None):
         return jsonify({'message': f'Database error: {str(e)}'}), 500
 
 @blp.route('/grab-rewards/<node>', methods=['GET'])
-def grabSlashes(node=None):
+def grabRewards(node=None):
     """
     Grab a node's rewards over past churns
     API used to inspect the bond amount of a node over time.
@@ -371,6 +544,59 @@ def grabChurnsNode(node):
     except SQLAlchemyError as e:
         return jsonify({'message': f'Database error: {str(e)}'}), 500
 
+@blp.route('/grabBPsForNode/<node>', methods=['GET'])
+def grabBPsForNode(node):
+    """
+    Returns all bond providers that have appeared on a node across all indexed churns
+    ---
+    tags:
+      - Historical Node
+    parameters:
+        - name: node
+          in: path
+          type: string
+          required: true
+          default: thor1sngd0zz6pwdx2e20sml27354vzkrwa4fnjxvnc
+          description: The node to look at
+    responses:
+        200:
+          description: List of bond provider addresses seen on this node
+    """
+    try:
+        data = (ThornodeMonitorHistoric.query
+                .filter(ThornodeMonitorHistoric.node_address == node)
+                .with_entities(ThornodeMonitorHistoric.bond_providers, ThornodeMonitorHistoric.churnHeight)
+                .order_by(ThornodeMonitorHistoric.churnHeight.asc())
+                .all())
+
+        if not data:
+            return jsonify({'message': f'No data found for node {node}'}), 404
+
+        all_bps = {}
+        for row in data:
+            if not row.bond_providers:
+                continue
+            bp_data = json.loads(row.bond_providers)
+            if 'providers' not in bp_data:
+                continue
+            for provider in bp_data['providers']:
+                addr = provider['bond_address']
+                if addr not in all_bps:
+                    all_bps[addr] = {
+                        'bond_address': addr,
+                        'firstSeen': row.churnHeight,
+                        'lastSeen': row.churnHeight,
+                        'churnsPresent': 1
+                    }
+                else:
+                    all_bps[addr]['lastSeen'] = row.churnHeight
+                    all_bps[addr]['churnsPresent'] += 1
+
+        return jsonify(list(all_bps.values()))
+
+    except SQLAlchemyError as e:
+        return jsonify({'message': f'Database error: {str(e)}'}), 500
+
 @blp.route('/grabHistoricData/<churn>', methods=['GET'])
 def grabHistoricData(churn):
     """Returns the data for all nodes on the network at the given churn height
@@ -422,27 +648,41 @@ def grabHistoricPerformers(churn):
                description: Churn height not indexed
            """
 
-    all_churns = grabChurns().json  # Replace with your actual call
-    if not isinstance(all_churns, list) or len(all_churns) == 0:
-        abort(404, 'No churns data available')
-
-    # Get the last 'churns' items
     try:
-        last_churns = all_churns[-int(churn):]
+        churn_count = int(churn)
     except ValueError:
         abort(400, 'Invalid churn parameter')
 
+    # Query DB directly instead of calling the view function (avoids Response parsing issues)
+    churns_query = (ThornodeMonitorGlobalHistoric.query
+                    .with_entities(ThornodeMonitorGlobalHistoric.churnHeight)
+                    .distinct()
+                    .order_by(ThornodeMonitorGlobalHistoric.churnHeight.asc())
+                    .all())
+    all_churns = [item.churnHeight for item in churns_query]
+
+    if not all_churns:
+        abort(404, 'No churns data available')
+
+    last_churns = all_churns[-churn_count:]
+
+    # Single batch query instead of one query per churn (eliminates N+1)
+    all_entries = (ThornodeMonitorHistoric.query
+                   .filter(ThornodeMonitorHistoric.churnHeight.in_(last_churns))
+                   .all())
+
     outputData = {}
+    for entry in all_entries:
+        d = entry.to_dict()
+        churn_h = entry.churnHeight
+        if churn_h not in outputData:
+            outputData[churn_h] = {}
+        if d['status'] == 'Active':
+            outputData[churn_h][d['node_address']] = d
 
-    for churn_data in last_churns:
-        entries = ThornodeMonitorHistoric.query.filter_by(churnHeight=churn_data).all()
-
-        if not entries:
-            abort(404, f'Churn height {churn_data} not indexed')
-
-        data = [entry.to_dict() for entry in entries]
-        active_nodes = {d['node_address']: d for d in data if d['status'] == "Active"}
-        outputData[churn_data] = active_nodes
+    for churn_h in last_churns:
+        if churn_h not in outputData:
+            abort(404, f'Churn height {churn_h} not indexed')
 
     ByChurnData = {
         churn: {

@@ -47,7 +47,7 @@ def grab_node(node):
         return jsonify({"error": "No record found"}), 404
 
 @blp.route('/getActive', methods=['GET'])
-def grab_node():
+def grab_active_nodes():
     """Grab a nodes current data
            API used to inspect a nodes current state
            ---

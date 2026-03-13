@@ -42,7 +42,7 @@ def grab_halted():
         return jsonify({"error": "No record found"}), 404
 
 @blp.route('/getCurrentHeight', methods=['GET'])
-def grab_halted():
+def get_current_height():
     """Returns current indexed height
            ---
            tags:
@@ -59,7 +59,7 @@ def grab_halted():
         return jsonify({"error": "No record found"}), 404
 
 @blp.route('/getBlockTime', methods=['GET'])
-def grab_halted():
+def get_block_time():
     """Returns the average blocktime over the last 100 blocks
            ---
            tags:
@@ -93,7 +93,7 @@ def grab_max_effective_stake():
         return jsonify({"error": "No record found"}), 404
 
 @blp.route('/getCoinGeckoData', methods=['GET'])
-def grab_max_effective_stake():
+def get_coingecko_data():
     """Returns the current coingecko data for Rune
            ---
            tags:
