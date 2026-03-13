@@ -34,23 +34,42 @@ def _sync_mimir_votes():
         return
 
     payload = response.json()
+    print(f'[mimir-votes] Response type: {type(payload).__name__}')
+    if isinstance(payload, dict):
+        print(f'[mimir-votes] Top-level keys ({len(payload)}): {list(payload.keys())[:5]}')
+        # Show first key's value type
+        for k, v in list(payload.items())[:1]:
+            print(f'[mimir-votes] Sample key "{k}" -> type={type(v).__name__}, value={str(v)[:200]}')
+    elif isinstance(payload, list):
+        print(f'[mimir-votes] List length: {len(payload)}')
+        if payload:
+            print(f'[mimir-votes] First item: {payload[0]}')
 
     # THORNode can return either:
     #   - a list of {key, value, signer} objects, OR
     #   - a dict like { "MIMIRKEY": { "thor1...": 1, "thor2...": 1 }, ... }
+    #   - a dict like { "mimirs": [...] } (wrapped format)
     raw_votes = []
     if isinstance(payload, list):
         raw_votes = payload
     elif isinstance(payload, dict):
-        # Convert dict format to list of {key, value, signer}
-        for mimir_key, signers in payload.items():
-            if isinstance(signers, dict):
-                for signer_addr, val in signers.items():
-                    raw_votes.append({"key": mimir_key, "value": val, "signer": signer_addr})
-            # skip non-dict values (shouldn't happen but be safe)
+        # Check if it's wrapped in a "mimirs" key
+        if "mimirs" in payload and isinstance(payload["mimirs"], list):
+            raw_votes = payload["mimirs"]
+        else:
+            # Dict format: { "MIMIRKEY": { "thor1...": 1, ... }, ... }
+            for mimir_key, signers in payload.items():
+                if isinstance(signers, dict):
+                    for signer_addr, val in signers.items():
+                        raw_votes.append({"key": mimir_key, "value": val, "signer": signer_addr})
+                elif isinstance(signers, int):
+                    # Single value, not per-node — skip or handle
+                    pass
     else:
         print(f'[mimir-votes] Unexpected response type: {type(payload)}')
         return
+
+    print(f'[mimir-votes] Parsed {len(raw_votes)} raw votes')
 
     # Build a structured dict: { node_address: { mimir_key: value, ... } }
     by_node = {}
