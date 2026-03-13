@@ -33,13 +33,32 @@ def _sync_mimir_votes():
         print(f'[mimir-votes] Failed to fetch node votes (HTTP {response.status_code})')
         return
 
-    raw_votes = response.json()  # list of {key, value, signer}
+    payload = response.json()
+
+    # THORNode can return either:
+    #   - a list of {key, value, signer} objects, OR
+    #   - a dict like { "MIMIRKEY": { "thor1...": 1, "thor2...": 1 }, ... }
+    raw_votes = []
+    if isinstance(payload, list):
+        raw_votes = payload
+    elif isinstance(payload, dict):
+        # Convert dict format to list of {key, value, signer}
+        for mimir_key, signers in payload.items():
+            if isinstance(signers, dict):
+                for signer_addr, val in signers.items():
+                    raw_votes.append({"key": mimir_key, "value": val, "signer": signer_addr})
+            # skip non-dict values (shouldn't happen but be safe)
+    else:
+        print(f'[mimir-votes] Unexpected response type: {type(payload)}')
+        return
 
     # Build a structured dict: { node_address: { mimir_key: value, ... } }
     by_node = {}
     # Also track per-key vote counts: { mimir_key: { value: count } }
     by_key = {}
     for vote in raw_votes:
+        if not isinstance(vote, dict):
+            continue
         signer = vote.get('signer', '')
         key    = vote.get('key', '')
         value  = vote.get('value')
