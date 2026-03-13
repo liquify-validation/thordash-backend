@@ -12,3 +12,15 @@ class MimirCache(db.Model):
 
     def to_dict(self):
         return json.loads(self.data) if self.data else {}
+
+
+class MimirVotesCache(db.Model):
+    __tablename__ = 'mimir_votes_cache'
+
+    # Always a single row (id=1)
+    id         = db.Column(db.Integer,  primary_key=True)
+    data       = db.Column(db.Text(length=16777215), nullable=True)   # Full JSON array from THORNode /mimir/nodes_all
+    updated_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return json.loads(self.data) if self.data else []

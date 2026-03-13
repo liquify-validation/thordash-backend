@@ -20,7 +20,7 @@ from API.queue import QueueBlueprint
 from API.nodes.task import run_every_minuite
 from API.histroic_global.task import fetch_and_store_prices, fetch_and_store_price
 from API.vaults.task import sync_vaults_scheduled
-from API.mimir.task import sync_mimir_scheduled
+from API.mimir.task import sync_mimir_scheduled, sync_mimir_votes_scheduled
 from API.pools.task import sync_pools_scheduled
 from API.queue.task import sync_queue_scheduled
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -60,6 +60,7 @@ def create_flask_app(db, db_url=None):
         scheduler.add_job(func=fetch_and_store_price,  trigger="cron", hour=23, minute=59, args=[app])
         scheduler.add_job(func=sync_vaults_scheduled,  trigger=IntervalTrigger(minutes=5),  args=[app])
         scheduler.add_job(func=sync_mimir_scheduled,   trigger=IntervalTrigger(minutes=10), args=[app])
+        scheduler.add_job(func=sync_mimir_votes_scheduled, trigger=IntervalTrigger(minutes=10), args=[app])
         scheduler.add_job(func=sync_pools_scheduled,   trigger=IntervalTrigger(minutes=2),  args=[app])
         scheduler.add_job(func=sync_queue_scheduled,   trigger=IntervalTrigger(minutes=1),  args=[app])
 
