@@ -15,6 +15,7 @@ BLOCK_TIME_SECS = 6.0   # average THORChain block time
 def _parse_streaming_memo(memo):
     """Extract interval and quantity from a THORChain streaming swap memo.
     Memo format: =:ASSET:ADDR:LIMIT/INTERVAL/QUANTITY  (or swap: prefix)
+    Interval of 0 means THORChain uses default (1 block).
     """
     interval, quantity = None, None
     if not memo:
@@ -26,6 +27,8 @@ def _parse_streaming_memo(memo):
         if len(segs) >= 3:
             try:
                 interval = int(segs[1])
+                if interval == 0:
+                    interval = 1  # THORChain default
             except (ValueError, IndexError):
                 pass
             try:
@@ -33,6 +36,19 @@ def _parse_streaming_memo(memo):
             except (ValueError, IndexError):
                 pass
     return interval, quantity
+
+
+def _is_streaming_swap(meta, memo_quantity):
+    """Determine if a swap is streaming. Midgard's isStreamingSwap flag is
+    unreliable, so also check memo quantity and streamingSwapMeta presence."""
+    if meta.get('isStreamingSwap', False):
+        return True
+    ssm = meta.get('streamingSwapMeta')
+    if ssm and ssm.get('quantity', 0) > 1:
+        return True
+    if memo_quantity is not None and memo_quantity > 1:
+        return True
+    return False
 
 
 def _estimate_single_swap_slip(source_asset, input_amount_base):
@@ -60,7 +76,8 @@ def _estimate_single_swap_slip(source_asset, input_amount_base):
 
 
 def _compute_savings(swap_dict):
-    """Add estimated savings fields to a swap dictionary."""
+    """Add estimated savings fields to a swap dictionary.
+    Uses block height span for time, and pool-depth formula for slip savings."""
     if swap_dict.get('swap_type') != 'streaming':
         swap_dict['time_seconds'] = None
         swap_dict['estimated_single_slip_bps'] = None
@@ -69,12 +86,14 @@ def _compute_savings(swap_dict):
         return swap_dict
 
     count = swap_dict.get('streaming_count') or 0
+    quantity = swap_dict.get('streaming_quantity') or 0
     interval = swap_dict.get('streaming_interval') or 1
     actual_slip = float(swap_dict.get('swap_slip') or 0)
 
-    # Time the streaming swap took
-    time_secs = count * interval * BLOCK_TIME_SECS
-    swap_dict['time_seconds'] = round(time_secs)
+    # Time: use block span (quantity * interval) as best estimate
+    blocks = max(count, quantity) * interval
+    time_secs = round(blocks * BLOCK_TIME_SECS)
+    swap_dict['time_seconds'] = time_secs
 
     # Estimated single-swap slippage
     est_slip = _estimate_single_swap_slip(
@@ -86,7 +105,7 @@ def _compute_savings(swap_dict):
     if est_slip is not None and est_slip > 0:
         saved = est_slip - actual_slip
         swap_dict['slip_saved_bps'] = round(saved, 2)
-        swap_dict['slip_saved_percent'] = round((saved / est_slip) * 100, 1) if est_slip > 0 else 0
+        swap_dict['slip_saved_percent'] = round((saved / est_slip) * 100, 1)
     else:
         swap_dict['slip_saved_bps'] = None
         swap_dict['slip_saved_percent'] = None
@@ -163,11 +182,25 @@ def _sync_swap_history():
         input_amount = int(in_coins.get('amount', 0))
         output_amount = int(out_coins.get('amount', 0))
 
-        is_streaming = meta.get('isStreamingSwap', False)
         memo = meta.get('memo', '')
+        ssm = meta.get('streamingSwapMeta') or {}
 
         # Parse streaming params from memo
         s_interval, s_quantity = _parse_streaming_memo(memo)
+
+        # Prefer streamingSwapMeta from Midgard when available
+        ssm_count    = int(ssm.get('count', 0) or 0)
+        ssm_quantity = int(ssm.get('quantity', 0) or 0)
+        ssm_interval = int(ssm.get('interval', 0) or 0)
+        if ssm_interval == 0:
+            ssm_interval = 1
+
+        # Use best available values (streamingSwapMeta > memo)
+        final_count    = ssm_count    or s_quantity or 0   # completed swaps = quantity when done
+        final_quantity = ssm_quantity  or s_quantity or 0
+        final_interval = ssm_interval if ssm_count else (s_interval or 1)
+
+        is_streaming = _is_streaming_swap(meta, s_quantity)
 
         # Estimate USD value from Midgard price data
         in_price_usd = float(meta.get('inPriceUSD', 0) or 0)
@@ -193,9 +226,9 @@ def _sync_swap_history():
             affiliate_fee       = meta.get('affiliateFee', '0'),
             swap_slip           = meta.get('swapSlip', '0'),
             liquidity_fee       = int(meta.get('liquidityFee', 0) or 0),
-            streaming_count     = s_quantity if is_streaming else None,  # completed = planned when done
-            streaming_quantity  = s_quantity if is_streaming else None,
-            streaming_interval  = s_interval if is_streaming else None,
+            streaming_count     = final_count if is_streaming else None,
+            streaming_quantity  = final_quantity if is_streaming else None,
+            streaming_interval  = final_interval if is_streaming else None,
             block_height        = int(action.get('height', 0)),
             block_timestamp     = ts,
             sender_address      = in_tx.get('address', ''),
