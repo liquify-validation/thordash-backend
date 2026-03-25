@@ -57,45 +57,45 @@ def updateIPs():
                     node.location = location
                     node.isp = isp
 
-                    ThornodeMonitor.session.commit()  # Commit the changes to the database
+                    db.session.commit()  # Commit the changes to the database
                     print(f"Updated node {node_address}: IP {new_ip}, Location {location}, ISP {isp}")
 
             except SQLAlchemyError as e:
                 db.session.rollback()  # Rollback in case of an error
                 print(f"Database error: {e}")
 
-def grabLatestBlockHeight(nodes):
+def grabLatestBlockHeight(nodes, max_retries=10):
     """
-    grabLatestBlockHeight looks at 3 random nodes in the active pool and returns the max height from those 3 nodes
+    grabLatestBlockHeight looks at up to 3 random nodes in the active pool and returns the max height.
 
     :param nodes: all thor nodes currently on the network pulled from ninerelms api
-    :return: the latest block height
+    :param max_retries: maximum number of attempts before giving up
+    :return: the latest block height, or 0 if all attempts fail
     """
-    # Filter active nodes
     activeNodes = [x for x in nodes if x['status'] == "Active"]
+    if not activeNodes:
+        print("[nodes] No active nodes available to query block height")
+        return 0
 
-    status_code = 0
-    while status_code != 200:
-        # Pick 3 random active nodes
-        randomOffsets = random.sample(range(len(activeNodes)), 3)
+    sample_size = min(3, len(activeNodes))
 
+    for attempt in range(max_retries):
+        randomOffsets = random.sample(range(len(activeNodes)), sample_size)
         status = []
         for offset in randomOffsets:
             try:
-                # Query node's block height
                 response = requests.get(f'http://{activeNodes[offset]["ip_address"]}:27147/status?', timeout=5)
                 if response.status_code == 200:
                     status.append(response.json())
             except requests.exceptions.RequestException:
-                print("Request timed out for node.")
+                print(f"[nodes] Request timed out for node (attempt {attempt + 1})")
 
-        # Break if we have valid data
         if status:
-            status_code = 200
+            blocks = [x['result']['sync_info']['latest_block_height'] for x in status]
+            return max(blocks)
 
-    # Extract block heights and return the max
-    blocks = [x['result']['sync_info']['latest_block_height'] for x in status]
-    return max(blocks)
+    print(f"[nodes] Failed to get block height after {max_retries} attempts")
+    return 0
 
 
 def splitNodes(nodes):
@@ -164,7 +164,7 @@ def gradDataAndSaveToDB():
                 if node['jail']['release_height'] > int(maxHeight):
                     is_jailed = 1
         except TypeError:
-            test = 1
+            pass
 
         # Add to update mappings
         update_mappings.append({

@@ -12,11 +12,12 @@ class Config:
     MAILGUN_API = os.getenv('MAILGUN_API_KEY')
     EMAIL_FROM = os.getenv('EMAIL_FROM')
     MIDGARD_URL = 'https://midgard.ninerealms.com' #os.getenv('MIDGARD_URL')
+    THORNODE_URL = 'https://thornode.ninerealms.com'
 
     encoded_username = quote_plus(DB_USERNAME)
     encoded_password = quote_plus(DB_PASSWORD)
 
-    PROPOGATE_EXCEPTIONS = True
+    PROPAGATE_EXCEPTIONS = True
     API_TITLE = "Thorchain liquify Auth"
     API_VERSION = "v1"
     OPENAPI_VERSION = "3.0.3"
